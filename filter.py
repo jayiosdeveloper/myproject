@@ -212,11 +212,11 @@ def encode_image(img):
 
 # ------------------- Single Filter API ------------------- #
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
+async def home():
     options = "".join([f"<option value='{f}'>{f}</option>" for f in FILTERS.keys()])
     return f"""
     <html>
-    <head><title>Single Filter</title></head>
+    <head><title>Filter App</title></head>
     <body>
     <h2>🎨 Apply Single Filter</h2>
     <form action="/apply_filter/" method="post" enctype="multipart/form-data">
@@ -253,7 +253,7 @@ async def apply_filter(filter_name: str = Form(...), adjust_value: str = Form(No
     encoded_img = encode_image(filtered)
     return f"""
     <html>
-    <head><title>Filtered Result</title></head>
+    <head><title>Result</title></head>
     <body>
         <h2>✅ Filter Applied: {filter_name}</h2>
         <img src="data:image/jpeg;base64,{encoded_img}" style="max-width:500px;"><br><br>
@@ -265,11 +265,11 @@ async def apply_filter(filter_name: str = Form(...), adjust_value: str = Form(No
 # ------------------- Multi Filter API ------------------- #
 @app.get("/multi_filter_auto/", response_class=HTMLResponse)
 async def multi_filter_auto_home():
-    return f"""
+    return """
     <html>
     <head><title>Auto Multi Filter</title></head>
     <body>
-    <h2>🎨 Applying All Filters Automatically</h2>
+    <h2>🎨 Apply All Filters</h2>
     <form action="/apply_multi_filter_auto/" method="post" enctype="multipart/form-data">
         <input type="file" name="file" accept="image/*" required><br><br>
         <button type="submit">Apply All Filters</button>
@@ -283,9 +283,14 @@ async def multi_filter_auto_home():
 @app.post("/apply_multi_filter_auto/", response_class=HTMLResponse)
 async def apply_multi_filter_auto(file: UploadFile = File(...)):
     contents = await file.read()
-    img = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
-    result_html = ""
+    img_array = np.frombuffer(contents, np.uint8)
+    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
 
+    # ✅ Safeguard: check if image decode failed
+    if img is None:
+        return HTMLResponse("<h2>❌ Invalid or corrupted image uploaded</h2>")
+
+    result_html = ""
     for filter_name, func in FILTERS.items():
         try:
             filtered = func(img.copy())
@@ -297,14 +302,14 @@ async def apply_multi_filter_auto(file: UploadFile = File(...)):
             </div>
             """
         except Exception as e:
-            print(f"Skipping {filter_name} due to error: {e}")
+            print(f"Skipping {filter_name}: {e}")
             continue
 
     return f"""
     <html>
     <head><title>All Filters Result</title></head>
     <body>
-        <h2>✅ All Filters Applied (Auto)</h2>
+        <h2>✅ All Filters Applied</h2>
         {result_html}
         <br><br>
         <a href="/multi_filter_auto/">🔙 Try Another Image</a>
@@ -312,10 +317,17 @@ async def apply_multi_filter_auto(file: UploadFile = File(...)):
     </html>
     """
 
+
 @app.post("/apply_multi_filter_auto_json/")
 async def apply_multi_filter_auto_json(file: UploadFile = File(...)):
     contents = await file.read()
-    img = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
+    img_array = np.frombuffer(contents, np.uint8)
+    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+    # ✅ Safeguard: check if image decode failed
+    if img is None:
+        return JSONResponse(content={"error": "Invalid or corrupted image uploaded"}, status_code=400)
+
     results = []
     for filter_name, func in FILTERS.items():
         try:
@@ -323,8 +335,9 @@ async def apply_multi_filter_auto_json(file: UploadFile = File(...)):
             encoded_img = encode_image(filtered)
             results.append({"filter_name": filter_name, "image_base64": encoded_img})
         except Exception as e:
-            print(f"Skipping {filter_name} due to error: {e}")
+            print(f"Skipping {filter_name}: {e}")
             continue
+
     return JSONResponse(content={"filters_applied": results})
 
 # ------------------- Run ------------------- #
